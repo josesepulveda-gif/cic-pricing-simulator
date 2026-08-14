@@ -96,7 +96,7 @@
             padding: 20px;
             margin-bottom: 24px;
             display: grid;
-            grid-template-columns: 1fr 1.1fr 1.1fr 1.1fr 1.3fr 1.2fr 1fr;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
             gap: 12px;
             align-items: center;
             box-shadow: var(--card-glow);
@@ -268,7 +268,7 @@
 
         .single-product-controls {
             display: grid;
-            grid-template-columns: 2fr 1fr 1fr auto;
+            grid-template-columns: 2fr 1fr 1.3fr 1fr auto;
             gap: 14px;
             align-items: center;
             background: rgba(15, 23, 42, 0.6);
@@ -352,7 +352,7 @@
         </div>
     </div>
 
-    <!-- Control Bar with Margen Retailer Selector and Time Horizon View -->
+    <!-- Control Bar with Retail Margin Selector, Time Horizon View, and Elasticity Model Selector -->
     <div class="config-bar">
         <div class="control-group">
             <label class="control-label">Cadena / Distribuidor</label>
@@ -376,16 +376,25 @@
         </div>
 
         <div class="control-group">
-            <label class="control-label">📅 Vista de Contribución</label>
-            <select id="timeViewSelect" onchange="runSimulation(); runSingleProductSimulation();">
-                <option value="weekly_avg" selected>🗓️ Promedio Semanal Real (Run-Rate / 30 sem)</option>
-                <option value="period_total">📦 Acumulado Total Período (30 Semanas)</option>
+            <label class="control-label">📈 Modelo de Elasticidad</label>
+            <select id="elasticityModelSelect" onchange="syncAndRunSimulation(this.value)">
+                <option value="asymmetric" selected>⚖️ Modelo 2: Asimétrico (Aversión Alzas 1.6x)</option>
+                <option value="pessimistic">📉 Modelo 3: Pesimista Estricto (Castigo Alzas 2.5x)</option>
+                <option value="loglog">📊 Modelo 1: Log-Log Simétrico</option>
             </select>
         </div>
 
         <div class="control-group">
-            <label class="control-label">🔍 Buscar en Descripción / SKU</label>
-            <input type="text" id="searchInput" placeholder="Ej: Ortopedic, King, Velador, Miel..." oninput="runSimulation()" />
+            <label class="control-label">📅 Vista Contribución</label>
+            <select id="timeViewSelect" onchange="runSimulation(); runSingleProductSimulation();">
+                <option value="weekly_avg" selected>🗓️ Promedio Semanal (Run-Rate / 30 sem)</option>
+                <option value="period_total">📦 Acumulado Total (30 Semanas)</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label class="control-label">🔍 Buscar Descripción / SKU</label>
+            <input type="text" id="searchInput" placeholder="Ej: Ortopedic, King, Velador..." oninput="runSimulation()" />
         </div>
 
         <div class="control-group">
@@ -401,7 +410,7 @@
         </div>
 
         <div class="control-group">
-            <label class="control-label">Filtro / Oportunidad Rebaja</label>
+            <label class="control-label">Filtro Oportunidad</label>
             <label class="filter-toggle">
                 <input type="checkbox" id="onlyRebajaCheck" onchange="runSimulation()" style="width: auto;" />
                 <span>Solo Bajables (Mg Act > Obj)</span>
@@ -503,8 +512,17 @@
             </div>
 
             <div class="control-group">
-                <label class="control-label">🏢 Cadena Retail (Evaluación SKU)</label>
+                <label class="control-label">🏢 Cadena Retail (SKU)</label>
                 <select id="spCadenaSelect" onchange="runSingleProductSimulation()"></select>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">📉 Modelo Elasticidad SKU</label>
+                <select id="spElasticityModelSelect" onchange="syncAndRunSimulation(this.value)">
+                    <option value="asymmetric" selected>⚖️ Modelo 2: Asimétrico (1.6x)</option>
+                    <option value="pessimistic">📉 Modelo 3: Pesimista (2.5x)</option>
+                    <option value="loglog">📊 Modelo 1: Log-Log Simétrico</option>
+                </select>
             </div>
 
             <div class="control-group">
@@ -744,6 +762,37 @@
             return { u: isNaN(u) ? 0 : u, v: isNaN(v) ? 0 : v };
         }
 
+        // MOTOR DE CÁLCULO DE DEMANDA SEGÚN MODELO SELECCIONADO (Log-Log vs Asimétrico vs Pesimista Estricto)
+        function getProjectedDemand(unHistWeeklyAvg, varPVPPct, elasticity, modelType) {
+            if (1.0 + varPVPPct <= 0) return 0;
+            
+            let effElasticity = elasticity;
+
+            if (modelType === 'asymmetric') {
+                // Modelo 2: Asimétrico por Aversión a Pérdidas (Kahneman-Tversky)
+                // En alzas de precio (varPVPPct > 0), penaliza 1.6x la elasticidad
+                if (varPVPPct > 0) {
+                    effElasticity = elasticity * 1.6;
+                }
+            } else if (modelType === 'pessimistic') {
+                // Modelo 3: Pesimista Estricto (Castigo Severo por Alzas - Sensible a Caídas de Venta)
+                // En alzas de precio (varPVPPct > 0), penaliza 2.5x la elasticidad
+                if (varPVPPct > 0) {
+                    effElasticity = elasticity * 2.5;
+                }
+            }
+            // Modelo 1 ('loglog'): Log-Log Simétrico Estándar
+
+            return unHistWeeklyAvg * Math.pow(1.0 + varPVPPct, effElasticity);
+        }
+
+        function syncAndRunSimulation(val) {
+            if (document.getElementById('elasticityModelSelect')) document.getElementById('elasticityModelSelect').value = val;
+            if (document.getElementById('spElasticityModelSelect')) document.getElementById('spElasticityModelSelect').value = val;
+            runSimulation();
+            runSingleProductSimulation();
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
 
@@ -892,7 +941,7 @@
         }
 
         /* ----------------------------------------------------
-           LÓGICA DEL NUEVO MÓDULO: PRODUCTO ÚNICO (SINGLE PRODUCT)
+           LÓGICA DEL MÓDULO: PRODUCTO ÚNICO (SINGLE PRODUCT)
            ---------------------------------------------------- */
         function runSingleProductSimulation() {
             const spInput = document.getElementById('spProductSearch');
@@ -902,6 +951,7 @@
             const selectedCadena = document.getElementById('spCadenaSelect') ? document.getElementById('spCadenaSelect').value : 'ALL';
             const targetMargin = parseFloat(document.getElementById('marginSlider').value) / 100.0;
             const targetRetailMargin = parseFloat(document.getElementById('retailMarginSlider').value) / 100.0;
+            const elasticityModel = document.getElementById('spElasticityModelSelect') ? document.getElementById('spElasticityModelSelect').value : 'asymmetric';
             const timeViewMode = document.getElementById('timeViewSelect') ? document.getElementById('timeViewSelect').value : 'weekly_avg';
 
             document.getElementById('spCicMarginText').textContent = (targetMargin * 100).toFixed(0) + '%';
@@ -933,7 +983,6 @@
             const costoFab = parseFloat(firstRow['costo_Fabricación'] || firstRow['costo_fabricacion'] || 0);
 
             let totalUnitsPeriod = 0;
-            let totalDistSales = 0;
             const unitsHistList = [];
             const pricesRetailList = [];
 
@@ -975,7 +1024,9 @@
             const pPublicoOferta = pPublicoNetoSim * 1.19;
 
             const varPVPPct = pPublicoU3S > 0 ? ((pPublicoOferta - pPublicoU3S) / pPublicoU3S) : 0;
-            const unProjWeeklyAvg = (1.0 + varPVPPct) > 0 ? unHistWeeklyAvg * Math.pow(1.0 + varPVPPct, elasticity) : 0;
+            
+            // CÁLCULO DE DEMANDA PROYECTADA USANDO EL MODELO SELECCIONADO
+            const unProjWeeklyAvg = getProjectedDemand(unHistWeeklyAvg, varPVPPct, elasticity, elasticityModel);
 
             const pDistPercibidoSim = (pPublicoOferta / 1.19) * (1.0 - targetRetailMargin);
             const contribUnitariaSim = pDistPercibidoSim - costoFab;
@@ -992,8 +1043,14 @@
             const diffCon = displayConSim - displayConActual;
             const diffConPct = displayConActual > 0 ? (diffCon / displayConActual * 100) : 0;
 
+            const modelNameMap = {
+                'asymmetric': '⚖️ Asimétrico (1.6x alzas)',
+                'pessimistic': '📉 Pesimista Estricto (2.5x alzas)',
+                'loglog': '📊 Log-Log Simétrico'
+            };
+
             // Actualizar KPIs del Módulo Producto Único
-            document.getElementById('spBadgeInfo').textContent = `SKU: ${skuCode} | ${prodName.substring(0,35)} (${matchedRows.length} cadenas)`;
+            document.getElementById('spBadgeInfo').textContent = `SKU: ${skuCode} | ${prodName.substring(0,35)} [${modelNameMap[elasticityModel]}]`;
             document.getElementById('spKpiPDist').textContent = `$${Math.round(pDistActual).toLocaleString('es-CL')} ➔ $${Math.round(pDistSim).toLocaleString('es-CL')}`;
             document.getElementById('spKpiPVP').textContent = `$${Math.round(pPublicoU3S).toLocaleString('es-CL')} ➔ $${Math.round(pPublicoOferta).toLocaleString('es-CL')}`;
             document.getElementById('spKpiUnits').textContent = `${displayUnitsHist.toFixed(2)} ➔ ${displayUnitsProj.toFixed(2)} u.`;
@@ -1003,7 +1060,7 @@
             document.getElementById('spKpiElasticity').textContent = elasticity.toFixed(2);
             document.getElementById('spKpiFactura').textContent = `Facturación PVP: $${Math.round(displayUnitsProj * pPublicoOferta).toLocaleString('es-CL')} CLP`;
 
-            // Generar Curva de Sensibilidad (-35% a +35%)
+            // Generar Curva de Sensibilidad (-35% a +35%) usando el Modelo Seleccionado
             const pricePoints = [];
             const pvpSteps = [-0.35, -0.25, -0.15, -0.05, 0.0, 0.05, 0.15, 0.25, 0.35];
 
@@ -1012,7 +1069,7 @@
 
             pvpSteps.forEach(pctStep => {
                 const pvpTest = pPublicoU3S * (1.0 + pctStep);
-                const qTest = unHistWeeklyAvg * Math.pow(1.0 + pctStep, elasticity);
+                const qTest = getProjectedDemand(unHistWeeklyAvg, pctStep, elasticity, elasticityModel);
                 const pDistPercibidoTest = (pvpTest / 1.19) * (1.0 - targetRetailMargin);
                 const contribUnitTest = pDistPercibidoTest - costoFab;
                 const contribWeeklyTest = qTest * contribUnitTest;
@@ -1040,12 +1097,12 @@
 
                 if (diffOpt < 0.05 * currentPVP) {
                     spBox.className = 'executive-box success';
-                    spTitle.innerHTML = `<i data-lucide="check-circle-2"></i> Precio Propuesto Cercano al Óptimo de Maximización ($${optPVP.toLocaleString('es-CL')} CLP)`;
-                    spContent.innerHTML = `La propuesta actual con PVP $${currentPVP.toLocaleString('es-CL')} CLP está dentro del rango óptimo que maximiza la contribución neta semanal ($${Math.round(optimalPricePoint.contribDisplayTest).toLocaleString('es-CL')} CLP).`;
+                    spTitle.innerHTML = `<i data-lucide="check-circle-2"></i> Precio Propuesto Cercano al Óptimo [${modelNameMap[elasticityModel]}] ($${optPVP.toLocaleString('es-CL')} CLP)`;
+                    spContent.innerHTML = `Bajo el <strong>${modelNameMap[elasticityModel]}</strong>, la propuesta actual con PVP $${currentPVP.toLocaleString('es-CL')} CLP está dentro del rango óptimo que maximiza la contribución neta ($${Math.round(optimalPricePoint.contribDisplayTest).toLocaleString('es-CL')} CLP).`;
                 } else if (currentPVP > optPVP) {
                     spBox.className = 'executive-box warning';
-                    spTitle.innerHTML = `<i data-lucide="alert-triangle"></i> Oportunidad: El Precio Actual está por encima del Óptimo de Contribución`;
-                    spContent.innerHTML = `Bajar el PVP de $${currentPVP.toLocaleString('es-CL')} CLP a <strong>$${optPVP.toLocaleString('es-CL')} CLP</strong> aprovecharía la elasticidad (${elasticity.toFixed(2)}) para capturar mayor volumen y maximizar la contribución neta.`;
+                    spTitle.innerHTML = `<i data-lucide="alert-triangle"></i> Riesgo en Alza: El PVP Propuesto supera el punto de desplome de ventas`;
+                    spContent.innerHTML = `Bajo el <strong>${modelNameMap[elasticityModel]}</strong>, subir el PVP a $${currentPVP.toLocaleString('es-CL')} CLP castiga la demanda. Ajustar el precio a <strong>$${optPVP.toLocaleString('es-CL')} CLP</strong> maximiza la rentabilidad sin perder volumen en retail.`;
                 } else {
                     spBox.className = 'executive-box warning';
                     spTitle.innerHTML = `<i data-lucide="arrow-up-right"></i> Oportunidad: Margen Capturable sin Destruir Volumen`;
@@ -1162,6 +1219,7 @@
             const targetCadena = document.getElementById('cadenaSelect').value;
             const targetMargin = parseFloat(document.getElementById('marginSlider').value) / 100.0;
             const targetRetailMargin = parseFloat(document.getElementById('retailMarginSlider').value) / 100.0;
+            const elasticityModel = document.getElementById('elasticityModelSelect') ? document.getElementById('elasticityModelSelect').value : 'asymmetric';
             const timeViewMode = document.getElementById('timeViewSelect') ? document.getElementById('timeViewSelect').value : 'weekly_avg';
             const searchQuery = (document.getElementById('searchInput') ? document.getElementById('searchInput').value : '').trim().toLowerCase();
             const sortOrder = document.getElementById('sortSelect') ? document.getElementById('sortSelect').value : 'diff_desc';
@@ -1245,8 +1303,8 @@
                 // Variación de PVP al Consumidor Final
                 const varPVPPct = pPublicoU3S > 0 ? ((pPublicoOferta - pPublicoU3S) / pPublicoU3S) : ((pDistSim - pDistActual) / pDistActual);
 
-                // Proyección de demanda semanal normalizada
-                const unProjWeeklyAvg = (1.0 + varPVPPct) > 0 ? unHistWeeklyAvg * Math.pow(1.0 + varPVPPct, elasticity) : 0;
+                // Proyección de demanda usando el modelo de elasticidad seleccionado
+                const unProjWeeklyAvg = getProjectedDemand(unHistWeeklyAvg, varPVPPct, elasticity, elasticityModel);
                 const unProjPeriodTotal = unProjWeeklyAvg * TOTAL_EVALUATION_WEEKS;
 
                 // CONTRIBUCIÓN NETA EXPLÍCITA DE CIC:
@@ -1305,8 +1363,8 @@
             lastSimulationResults = results;
             renderKPIs(totalActualCon, totalSimCon, totalHistUnits, totalProjUnits, results, timeViewMode);
             renderTable(results, timeViewMode);
-            renderExecutiveSummary(totalActualCon, totalSimCon, targetMargin, targetRetailMargin, results, onlyRebaja, timeViewMode);
-            renderCharts(targetCadena, targetMargin, timeViewMode);
+            renderExecutiveSummary(totalActualCon, totalSimCon, targetMargin, targetRetailMargin, results, onlyRebaja, timeViewMode, elasticityModel);
+            renderCharts(targetCadena, targetMargin, timeViewMode, elasticityModel);
             buildClientPortfolioComparator(timeViewMode);
         }
 
@@ -1839,7 +1897,7 @@
             });
         }
 
-        function renderExecutiveSummary(actCon, simCon, margin, retailMargin, results, isRebajaOnly, timeViewMode) {
+        function renderExecutiveSummary(actCon, simCon, margin, retailMargin, results, isRebajaOnly, timeViewMode, modelType) {
             const box = document.getElementById('execBox');
             const title = document.getElementById('execTitle');
             const content = document.getElementById('execContent');
@@ -1848,23 +1906,31 @@
             const pct = actCon > 0 ? (diff / actCon * 100) : 0;
             const modeText = (timeViewMode === 'period_total') ? 'acumulada en 30 semanas' : 'semanal promedio real (run-rate / 30 semanas)';
 
+            const modelNameMap = {
+                'asymmetric': '⚖️ Modelo 2: Asimétrico (Aversión a Alzas 1.6x)',
+                'pessimistic': '📉 Modelo 3: Pesimista Estricto (Castigo Alzas 2.5x)',
+                'loglog': '📊 Modelo 1: Log-Log Simétrico'
+            };
+
+            const modelLabel = modelNameMap[modelType] || 'Asimétrico';
+
             if (isRebajaOnly) {
                 box.className = 'executive-box success';
-                title.innerHTML = `<i data-lucide="check-circle-2"></i> Oportunidad de Rebaja (${results.length} SKUs | Contribución Neta ${modeText})`;
-                content.innerHTML = `Normalizado en las 30 semanas del período completo, al descontar explícitamente el <strong>19% de IVA</strong> y el <strong>${(retailMargin * 100).toFixed(0)}% de margen del cliente</strong>, la contribución neta real de CIC varía en un <strong>${pct>=0?'+':''}${pct.toFixed(1)}% (+$${Math.round(diff).toLocaleString('es-CL')} CLP)</strong>.`;
+                title.innerHTML = `<i data-lucide="check-circle-2"></i> Oportunidad de Rebaja (${results.length} SKUs | ${modelLabel})`;
+                content.innerHTML = `Bajo el <strong>${modelLabel}</strong>, al descontar el <strong>19% de IVA</strong> y el <strong>${(retailMargin * 100).toFixed(0)}% de margen del cliente</strong>, la contribución neta real de CIC varía en un <strong>${pct>=0?'+':''}${pct.toFixed(1)}% (+$${Math.round(diff).toLocaleString('es-CL')} CLP ${modeText})</strong>.`;
             } else if (diff >= 0) {
                 box.className = 'executive-box success';
-                title.innerHTML = `<i data-lucide="check-circle-2"></i> Estrategia Rentable Neta (+ $${Math.round(diff).toLocaleString('es-CL')} CLP ${timeViewMode==='period_total'?'en 30 semanas':'/ semana real'})`;
-                content.innerHTML = `Alcanzar un <strong>${(margin * 100).toFixed(1)}% de margen CIC</strong> descontando IVA 19% y el <strong>${(retailMargin * 100).toFixed(0)}% de margen del cliente</strong> incrementa la contribución neta real en un <strong>+${pct.toFixed(1)}%</strong>.`;
+                title.innerHTML = `<i data-lucide="check-circle-2"></i> Estrategia Rentable Neta (+ $${Math.round(diff).toLocaleString('es-CL')} CLP | ${modelLabel})`;
+                content.innerHTML = `Alcanzar un <strong>${(margin * 100).toFixed(1)}% de margen CIC</strong> bajo el <strong>${modelLabel}</strong> incrementa la contribución neta real en un <strong>+${pct.toFixed(1)}%</strong>.`;
             } else {
                 box.className = 'executive-box warning';
-                title.innerHTML = `<i data-lucide="alert-triangle"></i> Sensibilidad por Margen Retailer (- $${Math.round(Math.abs(diff)).toLocaleString('es-CL')} CLP ${timeViewMode==='period_total'?'en 30 semanas':'/ semana real'})`;
-                content.innerHTML = `Si el cliente aumenta su margen al <strong>${(retailMargin * 100).toFixed(0)}%</strong>, la recaudación neta percibida por CIC reduce el ingreso unitario y contrae las unidades vendidas en SKUs elásticos. Impacto neto: <strong>-${Math.abs(pct).toFixed(1)}%</strong>.`;
+                title.innerHTML = `<i data-lucide="alert-triangle"></i> Sensibilidad por Alzas y Margen Retailer (- $${Math.round(Math.abs(diff)).toLocaleString('es-CL')} CLP | ${modelLabel})`;
+                content.innerHTML = `Bajo el <strong>${modelLabel}</strong>, elevar el margen del cliente o subir el PVP castiga las ventas en retail, reduciendo la contribución neta total en un <strong>-${Math.abs(pct).toFixed(1)}%</strong>.`;
             }
             lucide.createIcons();
         }
 
-        function renderCharts(cadena, currentMargin, timeViewMode) {
+        function renderCharts(cadena, currentMargin, timeViewMode, modelType) {
             const marginSteps = [0.25, 0.30, 0.35, 0.38, 0.40, 0.42, 0.45, 0.50];
             const targetRetailMargin = parseFloat(document.getElementById('retailMarginSlider').value) / 100.0;
             const onlyRebaja = document.getElementById('onlyRebajaCheck').checked;
@@ -1910,7 +1976,7 @@
 
                     const varPVPPct = pPublicoU3S > 0 ? ((pPublicoOferta - pPublicoU3S) / pPublicoU3S) : ((pDistSim - pDistActual) / pDistActual);
 
-                    const unProjWeeklyAvg = (1 + varPVPPct) > 0 ? unHistWeeklyAvg * Math.pow(1 + varPVPPct, elasticity) : 0;
+                    const unProjWeeklyAvg = getProjectedDemand(unHistWeeklyAvg, varPVPPct, elasticity, modelType);
                     const pDistPercibidoSim = (pPublicoOferta / 1.19) * (1 - targetRetailMargin);
                     
                     const conWeekly = unProjWeeklyAvg * (pDistPercibidoSim - costoFab);
@@ -1981,6 +2047,7 @@
             const targetMargin = parseFloat(document.getElementById('marginSlider').value) / 100.0;
             const targetRetailMargin = parseFloat(document.getElementById('retailMarginSlider').value) / 100.0;
             const timeViewMode = document.getElementById('timeViewSelect') ? document.getElementById('timeViewSelect').value : 'weekly_avg';
+            const elasticityModel = document.getElementById('elasticityModelSelect') ? document.getElementById('elasticityModelSelect').value : 'asymmetric';
             const rebajaResults = lastSimulationResults.filter(r => r.mgActual > targetMargin);
 
             if (rebajaResults.length === 0) {
@@ -1988,10 +2055,10 @@
                 return;
             }
 
-            const headers = ['Cadena', 'Cód. Interno', 'Producto', 'Unidad Negocio', 'Costo Fabricación ($ CLP)', 'Margen Actual CIC (%)', 'Margen Objetivo CIC (%)', 'Margen Retailer Simulado (%)', 'Precio Dist Neto Actual ($ CLP)', 'Precio Dist Neto Simulado ($ CLP)', 'Monto Rebaja Dist. ($ CLP)', 'Rebaja Precio (%)', 'PVP Prom. U3S CON IVA 19% ($ CLP)', 'PVP Oferta Propuesta CON IVA 19% ($ CLP)', 'Unidades Totales 30 Semanas', 'Unidades Semanales Promedio REAL', 'Unidades Proyectadas Semanales REALES', 'Unidades Proyectadas 30 Semanas', 'Incremento Volumen (%)', 'Contribución Semanal Actual ($ CLP)', 'Contribución Semanal Simulada ($ CLP)', 'Contribución Total Actual (30 sem)', 'Contribución Total Simulada (30 sem)', 'Ganancia Neta Contribución ($ CLP)', 'Elasticidad Estimada'];
+            const headers = ['Cadena', 'Cód. Interno', 'Producto', 'Unidad Negocio', 'Costo Fabricación ($ CLP)', 'Margen Actual CIC (%)', 'Margen Objetivo CIC (%)', 'Margen Retailer Simulado (%)', 'Modelo Elasticidad', 'Precio Dist Neto Actual ($ CLP)', 'Precio Dist Neto Simulado ($ CLP)', 'Monto Rebaja Dist. ($ CLP)', 'Rebaja Precio (%)', 'PVP Prom. U3S CON IVA 19% ($ CLP)', 'PVP Oferta Propuesta CON IVA 19% ($ CLP)', 'Unidades Totales 30 Semanas', 'Unidades Semanales Promedio REAL', 'Unidades Proyectadas Semanales REALES', 'Unidades Proyectadas 30 Semanas', 'Incremento Volumen (%)', 'Contribución Semanal Actual ($ CLP)', 'Contribución Semanal Simulada ($ CLP)', 'Contribución Total Actual (30 sem)', 'Contribución Total Simulada (30 sem)', 'Ganancia Neta Contribución ($ CLP)', 'Elasticidad Estimada'];
             
             const rows = rebajaResults.map(r => [
-                r.cadena, r.sku, `"${r.name.replace(/"/g, '""')}"`, r.cat, Math.round(r.costoFab), (r.mgActual*100).toFixed(2)+'%', (r.targetMargin*100).toFixed(2)+'%', (targetRetailMargin*100).toFixed(2)+'%', Math.round(r.pDistActual), Math.round(r.pDistSim), Math.round(r.pDistActual - r.pDistSim), Math.abs(r.varPrecioPct).toFixed(2)+'%', Math.round(r.pPublicoU3S), Math.round(r.pPublicoOferta), r.totalUnitsPeriod.toFixed(0), r.unHistWeeklyAvg.toFixed(2), r.unProjWeeklyAvg.toFixed(2), r.unProjPeriodTotal.toFixed(1), r.varVolPct.toFixed(2)+'%', Math.round(r.conActualWeekly), Math.round(r.conSimWeekly), Math.round(r.conActualTotal), Math.round(r.conSimTotal), Math.round(r.diffCon), r.elasticity
+                r.cadena, r.sku, `"${r.name.replace(/"/g, '""')}"`, r.cat, Math.round(r.costoFab), (r.mgActual*100).toFixed(2)+'%', (r.targetMargin*100).toFixed(2)+'%', (targetRetailMargin*100).toFixed(2)+'%', elasticityModel, Math.round(r.pDistActual), Math.round(r.pDistSim), Math.round(r.pDistActual - r.pDistSim), Math.abs(r.varPrecioPct).toFixed(2)+'%', Math.round(r.pPublicoU3S), Math.round(r.pPublicoOferta), r.totalUnitsPeriod.toFixed(0), r.unHistWeeklyAvg.toFixed(2), r.unProjWeeklyAvg.toFixed(2), r.unProjPeriodTotal.toFixed(1), r.varVolPct.toFixed(2)+'%', Math.round(r.conActualWeekly), Math.round(r.conSimWeekly), Math.round(r.conActualTotal), Math.round(r.conSimTotal), Math.round(r.diffCon), r.elasticity
             ]);
 
             const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
@@ -1999,7 +2066,7 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.setAttribute('href', url);
-            link.setAttribute('download', `CIC_REBAJAS_NETO_REAL_30SEM_${(targetMargin*100).toFixed(0)}PCT.csv`);
+            link.setAttribute('download', `CIC_REBAJAS_NETO_REAL_30SEM_${(targetMargin*100).toFixed(0)}PCT_${elasticityModel}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -2008,10 +2075,11 @@
         function exportToCSV() {
             if (!lastSimulationResults || lastSimulationResults.length === 0) return;
             const targetRetailMargin = parseFloat(document.getElementById('retailMarginSlider').value) / 100.0;
-            const headers = ['Cadena', 'Cód. Interno', 'Producto', 'Unidad Negocio', 'Costo Fab ($ CLP)', 'Margen Actual CIC (%)', 'Margen Objetivo CIC (%)', 'Margen Retailer Simulado (%)', 'Precio Dist Neto Actual ($ CLP)', 'Precio Dist Neto Simulado ($ CLP)', 'PVP U3S CON IVA 19% ($ CLP)', 'PVP Oferta CON IVA 19% ($ CLP)', 'Unidades Hist (30 sem)', 'Unidades Sem. REALES', 'Unidades Proyectadas Sem. REALES', 'Unidades Proyectadas (30 sem)', 'Contribución Semanal Actual ($ CLP)', 'Contribución Semanal Simulada ($ CLP)', 'Contribución Total Actual (30 sem)', 'Contribución Total Simulada (30 sem)', 'Elasticidad'];
+            const elasticityModel = document.getElementById('elasticityModelSelect') ? document.getElementById('elasticityModelSelect').value : 'asymmetric';
+            const headers = ['Cadena', 'Cód. Interno', 'Producto', 'Unidad Negocio', 'Costo Fab ($ CLP)', 'Margen Actual CIC (%)', 'Margen Objetivo CIC (%)', 'Margen Retailer Simulado (%)', 'Modelo Elasticidad', 'Precio Dist Neto Actual ($ CLP)', 'Precio Dist Neto Simulado ($ CLP)', 'PVP U3S CON IVA 19% ($ CLP)', 'PVP Oferta CON IVA 19% ($ CLP)', 'Unidades Hist (30 sem)', 'Unidades Sem. REALES', 'Unidades Proyectadas Sem. REALES', 'Unidades Proyectadas (30 sem)', 'Contribución Semanal Actual ($ CLP)', 'Contribución Semanal Simulada ($ CLP)', 'Contribución Total Actual (30 sem)', 'Contribución Total Simulada (30 sem)', 'Elasticidad'];
             
             const rows = lastSimulationResults.map(r => [
-                r.cadena, r.sku, `"${r.name.replace(/"/g, '""')}"`, r.cat, Math.round(r.costoFab), (r.mgActual*100).toFixed(2)+'%', (r.targetMargin*100).toFixed(2)+'%', (targetRetailMargin*100).toFixed(2)+'%', Math.round(r.pDistActual), Math.round(r.pDistSim), Math.round(r.pPublicoU3S || 0), Math.round(r.pPublicoOferta || 0), r.totalUnitsPeriod.toFixed(0), r.unHistWeeklyAvg.toFixed(2), r.unProjWeeklyAvg.toFixed(2), r.unProjPeriodTotal.toFixed(1), Math.round(r.conActualWeekly), Math.round(r.conSimWeekly), Math.round(r.conActualTotal), Math.round(r.conSimTotal), r.elasticity
+                r.cadena, r.sku, `"${r.name.replace(/"/g, '""')}"`, r.cat, Math.round(r.costoFab), (r.mgActual*100).toFixed(2)+'%', (r.targetMargin*100).toFixed(2)+'%', (targetRetailMargin*100).toFixed(2)+'%', elasticityModel, Math.round(r.pDistActual), Math.round(r.pDistSim), Math.round(r.pPublicoU3S || 0), Math.round(r.pPublicoOferta || 0), r.totalUnitsPeriod.toFixed(0), r.unHistWeeklyAvg.toFixed(2), r.unProjWeeklyAvg.toFixed(2), r.unProjPeriodTotal.toFixed(1), Math.round(r.conActualWeekly), Math.round(r.conSimWeekly), Math.round(r.conActualTotal), Math.round(r.conSimTotal), r.elasticity
             ]);
 
             const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
@@ -2019,7 +2087,7 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.setAttribute('href', url);
-            link.setAttribute('download', `Simulacion_CIC_Contribucion_Neta_REAL_${document.getElementById('cadenaSelect').value}.csv`);
+            link.setAttribute('download', `Simulacion_CIC_Contribucion_Neta_REAL_${document.getElementById('cadenaSelect').value}_${elasticityModel}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
