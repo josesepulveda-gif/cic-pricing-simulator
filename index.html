@@ -253,6 +253,31 @@
         #fileInput { display: none; }
         .status-badge { font-size: 12px; color: var(--accent-cyan); font-weight: 600; }
 
+        /* SINGLE PRODUCT MODULE STYLING */
+        .single-product-section {
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-top: 28px;
+            margin-bottom: 28px;
+            box-shadow: var(--card-glow);
+            border-top: 4px solid var(--accent-cyan);
+        }
+
+        .single-product-controls {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr auto;
+            gap: 14px;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--panel-border);
+            margin-bottom: 20px;
+        }
+
         .comparator-section {
             background: var(--panel-bg);
             backdrop-filter: blur(16px);
@@ -331,13 +356,13 @@
     <div class="config-bar">
         <div class="control-group">
             <label class="control-label">Cadena / Distribuidor</label>
-            <select id="cadenaSelect" onchange="runSimulation()"></select>
+            <select id="cadenaSelect" onchange="runSimulation(); runSingleProductSimulation();"></select>
         </div>
 
         <div class="control-group">
             <label class="control-label">Margen Objetivo CIC (%)</label>
             <div class="slider-wrapper">
-                <input type="range" id="marginSlider" min="20" max="60" step="1" value="42" oninput="updateMarginLabel(this.value); runSimulation();">
+                <input type="range" id="marginSlider" min="20" max="60" step="1" value="42" oninput="updateMarginLabel(this.value); runSimulation(); runSingleProductSimulation();">
                 <div class="margin-badge" id="marginBadge">42%</div>
             </div>
         </div>
@@ -345,14 +370,14 @@
         <div class="control-group">
             <label class="control-label">Margen Retailer / Cliente (%)</label>
             <div class="slider-wrapper">
-                <input type="range" id="retailMarginSlider" min="1" max="25" step="1" value="20" oninput="updateRetailMarginLabel(this.value); runSimulation();">
+                <input type="range" id="retailMarginSlider" min="1" max="25" step="1" value="20" oninput="updateRetailMarginLabel(this.value); runSimulation(); runSingleProductSimulation();">
                 <div class="margin-badge" style="background: rgba(245, 158, 11, 0.2); border-color: var(--accent-amber); color: #fde68a;" id="retailMarginBadge">20%</div>
             </div>
         </div>
 
         <div class="control-group">
             <label class="control-label">📅 Vista de Contribución</label>
-            <select id="timeViewSelect" onchange="runSimulation()">
+            <select id="timeViewSelect" onchange="runSimulation(); runSingleProductSimulation();">
                 <option value="weekly_avg" selected>🗓️ Promedio Semanal Real (Run-Rate / 30 sem)</option>
                 <option value="period_total">📦 Acumulado Total Período (30 Semanas)</option>
             </select>
@@ -458,6 +483,118 @@
                 <div class="chart-container">
                     <canvas id="categoryChart"></canvas>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW MODULE: PRODUCTO ÚNICO (DEEP-DIVE DEMAND & CONTRIBUTION SIMULATOR) -->
+    <div class="single-product-section" id="singleProductSection">
+        <div class="section-title">
+            <span><i data-lucide="crosshair"></i> Módulo: Producto Único (Simulador Individual de Demanda & Contribución)</span>
+            <span style="font-size: 12px; color: var(--accent-cyan); font-weight: 600;" id="spBadgeInfo">Análisis Individual por SKU / Código</span>
+        </div>
+
+        <!-- Single Product Control Panel -->
+        <div class="single-product-controls">
+            <div class="control-group">
+                <label class="control-label">🔎 Seleccionar Producto (Buscar por Descripción o SKU)</label>
+                <input type="text" id="spProductSearch" list="spDatalist" placeholder="Escribe un SKU o Nombre (ej: 780642767326-0, Velador Milan...)" onchange="runSingleProductSimulation()" oninput="runSingleProductSimulation()" />
+                <datalist id="spDatalist"></datalist>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">🏢 Cadena Retail (Evaluación SKU)</label>
+                <select id="spCadenaSelect" onchange="runSingleProductSimulation()"></select>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">⚙️ Margen CIC / Retailer</label>
+                <div style="font-size: 12px; color: var(--text-muted); padding-top: 6px;">
+                    CIC: <strong id="spCicMarginText" style="color: #60a5fa;">42%</strong> | Retailer: <strong id="spRetailMarginText" style="color: #fde68a;">20%</strong>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-end;">
+                <button class="btn btn-primary" onclick="runSingleProductSimulation()">
+                    <i data-lucide="refresh-cw"></i> Actualizar SKU
+                </button>
+            </div>
+        </div>
+
+        <!-- Single Product KPI Cards Grid -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px;">
+            <div class="kpi-card" style="border-left-color: var(--accent-cyan);">
+                <div class="kpi-title"><i data-lucide="tag"></i> Precio Distribuidor CIC ($ CLP)</div>
+                <div class="kpi-value" style="font-size: 20px;" id="spKpiPDist">$0 ➔ $0</div>
+                <div class="kpi-sub" id="spKpiPDistSub">Neto de IVA y Margen Retailer</div>
+            </div>
+
+            <div class="kpi-card amber">
+                <div class="kpi-title"><i data-lucide="shopping-bag"></i> PVP con IVA 19% ($ CLP)</div>
+                <div class="kpi-value" style="font-size: 20px; color: #fde68a;" id="spKpiPVP">$0 ➔ $0</div>
+                <div class="kpi-sub" id="spKpiPVPSub">Histórico U3S ➔ Oferta Propuesta</div>
+            </div>
+
+            <div class="kpi-card emerald">
+                <div class="kpi-title"><i data-lucide="package-check"></i> Demanda Proyectada (u/sem)</div>
+                <div class="kpi-value" style="font-size: 20px; color: #6ee7b7;" id="spKpiUnits">0.0 ➔ 0.0</div>
+                <div class="kpi-sub" id="spKpiUnitsSub">Run-Rate Semanal Normalizado</div>
+            </div>
+
+            <div class="kpi-card" style="border-left-color: var(--accent-emerald);">
+                <div class="kpi-title"><i data-lucide="dollar-sign"></i> Contribución Neta Semanal ($ CLP)</div>
+                <div class="kpi-value" style="font-size: 20px;" id="spKpiContrib">$0 ➔ $0</div>
+                <div class="kpi-sub" id="spKpiContribSub">Ganancia Neta para CIC</div>
+            </div>
+
+            <div class="kpi-card rose">
+                <div class="kpi-title"><i data-lucide="activity"></i> Elasticidad & Facturación</div>
+                <div class="kpi-value" style="font-size: 20px; color: #fda4af;" id="spKpiElasticity">--</div>
+                <div class="kpi-sub" id="spKpiFactura">Facturación PVP: $0 CLP</div>
+            </div>
+        </div>
+
+        <!-- Executive Diagnosis Box for Single Product -->
+        <div class="executive-box" id="spExecBox" style="margin-bottom: 20px;">
+            <div class="box-title" id="spExecTitle"><i data-lucide="target"></i> Diagnóstico de Maximización para Producto Único</div>
+            <div class="box-content" id="spExecContent">Selecciona un SKU para ver el análisis de sensibilidad...</div>
+        </div>
+
+        <!-- Single Product Dedicated Charts (Demand Curve & Contribution Curve Side-by-Side) -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+            <div class="section-card" style="background: rgba(15, 23, 42, 0.8);">
+                <div class="section-title"><i data-lucide="line-chart"></i> 1. Curva de Elasticidad & Demanda (PVP vs Volumen Semanal)</div>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="spDemandChart"></canvas>
+                </div>
+            </div>
+
+            <div class="section-card" style="background: rgba(15, 23, 42, 0.8);">
+                <div class="section-title"><i data-lucide="trending-up"></i> 2. Curva de Contribución Neta Semanal ($ CLP vs Precio PVP)</div>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="spContribChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Price Sensitivity Scenario Table for Single Product -->
+        <div class="section-card" style="background: rgba(15, 23, 42, 0.8);">
+            <div class="section-title"><i data-lucide="sliders"></i> Tabla de Sensibilidad de Escenarios de Precio (SKU Seleccionado)</div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Escenario de Precio</th>
+                            <th>PVP con IVA (19%)</th>
+                            <th>Margen Retailer</th>
+                            <th>Precio Dist. CIC</th>
+                            <th>Volumen Proyectado (u/sem)</th>
+                            <th>Contribución Neta Semanal ($ CLP)</th>
+                            <th>Estado / Recomendación</th>
+                        </tr>
+                    </thead>
+                    <tbody id="spSensitivityTableBody"></tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -591,6 +728,8 @@
         let tradeoffChartInstance = null;
         let categoryChartInstance = null;
         let clientStackChartInstance = null;
+        let spDemandChartInstance = null;
+        let spContribChartInstance = null;
         let lastSimulationResults = [];
         let clientSummaryData = [];
         let cannibalizationResults = [];
@@ -631,7 +770,9 @@
                             currentDataset = results.data;
                             document.getElementById('dataStatus').textContent = `✅ ${file.name} cargado (${results.data.length} filas)`;
                             updateCadenaOptions();
+                            populateSingleProductDatalist();
                             runSimulation();
+                            runSingleProductSimulation();
                             runCannibalizationAnalysisJS();
                             buildContributionByElasticityJS();
                         }
@@ -647,7 +788,9 @@
                 complete: (results) => {
                     currentDataset = results.data;
                     updateCadenaOptions();
+                    populateSingleProductDatalist();
                     runSimulation();
+                    runSingleProductSimulation();
                     runCannibalizationAnalysisJS();
                     buildContributionByElasticityJS();
                 }
@@ -656,23 +799,62 @@
 
         function updateCadenaOptions() {
             const select = document.getElementById('cadenaSelect');
+            const spSelect = document.getElementById('spCadenaSelect');
             const cadenas = [...new Set(currentDataset.map(r => r.Cadena ? r.Cadena.trim() : ''))].filter(Boolean);
+            
             select.innerHTML = '<option value="ALL">Todas las Cadenas (Consolidado)</option>';
+            spSelect.innerHTML = '<option value="ALL">Todas las Cadenas (Consolidado SKU)</option>';
+
             cadenas.sort().forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c;
-                opt.textContent = c;
-                if (c.toLowerCase() === 'falabella') opt.selected = true;
-                select.appendChild(opt);
+                const opt1 = document.createElement('option');
+                opt1.value = c;
+                opt1.textContent = c;
+                if (c.toLowerCase() === 'falabella') opt1.selected = true;
+                select.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = c;
+                opt2.textContent = c;
+                spSelect.appendChild(opt2);
             });
+        }
+
+        function populateSingleProductDatalist() {
+            const datalist = document.getElementById('spDatalist');
+            datalist.innerHTML = '';
+            
+            const seen = new Set();
+            let firstSKU = '';
+
+            currentDataset.forEach(row => {
+                const sku = (row['Cód. Interno'] || row['Cod_Interno'] || '').trim();
+                const desc = (row['Descripción Producto'] || row['Descripcion_Producto'] || '').trim();
+                if (!sku || seen.has(sku)) return;
+                seen.add(sku);
+
+                if (!firstSKU) firstSKU = sku;
+
+                const opt = document.createElement('option');
+                opt.value = sku;
+                opt.label = `${sku} - ${desc.substring(0, 45)}`;
+                datalist.appendChild(opt);
+            });
+
+            // Set default SKU if search is empty
+            const spSearchInput = document.getElementById('spProductSearch');
+            if (spSearchInput && !spSearchInput.value && firstSKU) {
+                spSearchInput.value = firstSKU;
+            }
         }
 
         function updateMarginLabel(val) {
             document.getElementById('marginBadge').textContent = val + '%';
+            document.getElementById('spCicMarginText').textContent = val + '%';
         }
 
         function updateRetailMarginLabel(val) {
             document.getElementById('retailMarginBadge').textContent = val + '%';
+            document.getElementById('spRetailMarginText').textContent = val + '%';
         }
 
         function calculateLogLogElasticity(prices, units) {
@@ -707,6 +889,273 @@
             else if (beta > -0.2) beta = -0.5;
 
             return Math.round(beta * 100) / 100;
+        }
+
+        /* ----------------------------------------------------
+           LÓGICA DEL NUEVO MÓDULO: PRODUCTO ÚNICO (SINGLE PRODUCT)
+           ---------------------------------------------------- */
+        function runSingleProductSimulation() {
+            const spInput = document.getElementById('spProductSearch');
+            if (!spInput) return;
+
+            const query = spInput.value.trim().toLowerCase();
+            const selectedCadena = document.getElementById('spCadenaSelect') ? document.getElementById('spCadenaSelect').value : 'ALL';
+            const targetMargin = parseFloat(document.getElementById('marginSlider').value) / 100.0;
+            const targetRetailMargin = parseFloat(document.getElementById('retailMarginSlider').value) / 100.0;
+            const timeViewMode = document.getElementById('timeViewSelect') ? document.getElementById('timeViewSelect').value : 'weekly_avg';
+
+            document.getElementById('spCicMarginText').textContent = (targetMargin * 100).toFixed(0) + '%';
+            document.getElementById('spRetailMarginText').textContent = (targetRetailMargin * 100).toFixed(0) + '%';
+
+            if (!query || currentDataset.length === 0) return;
+
+            // Filtrar filas por SKU o Descripción que coincidan
+            let matchedRows = currentDataset.filter(r => {
+                const sku = (r['Cód. Interno'] || r['Cod_Interno'] || '').trim().toLowerCase();
+                const desc = (r['Descripción Producto'] || r['Descripcion_Producto'] || '').trim().toLowerCase();
+                return sku === query || sku.includes(query) || desc.includes(query);
+            });
+
+            if (selectedCadena !== 'ALL') {
+                matchedRows = matchedRows.filter(r => r.Cadena && r.Cadena.trim().toLowerCase() === selectedCadena.toLowerCase());
+            }
+
+            if (matchedRows.length === 0) {
+                document.getElementById('spBadgeInfo').textContent = '⚠️ Producto no encontrado';
+                return;
+            }
+
+            // Consolidar datos del SKU seleccionado
+            const firstRow = matchedRows[0];
+            const skuCode = firstRow['Cód. Interno'] || firstRow['Cod_Interno'] || 'SKU';
+            const prodName = firstRow['Descripción Producto'] || firstRow['Descripcion_Producto'] || 'Producto';
+            const prodCat = firstRow['Unidad de Negocio'] || 'General';
+            const costoFab = parseFloat(firstRow['costo_Fabricación'] || firstRow['costo_fabricacion'] || 0);
+
+            let totalUnitsPeriod = 0;
+            let totalDistSales = 0;
+            const unitsHistList = [];
+            const pricesRetailList = [];
+
+            matchedRows.forEach(row => {
+                for (let k = 1; k <= 30; k++) {
+                    const pair = getWeeklyPair(row, k);
+                    if (pair.u > 0) {
+                        totalUnitsPeriod += pair.u;
+                        unitsHistList.push(pair.u);
+                        if (pair.v > 0) {
+                            pricesRetailList.push(pair.v / pair.u);
+                        }
+                    }
+                }
+            });
+
+            if (totalUnitsPeriod <= 0 || costoFab <= 0) return;
+
+            // Precios y elasticidad consolidada
+            const pDistActual = parseFloat(firstRow['Precio_Venta_Distribuidor'] || (costoFab / 0.5));
+            const unHistWeeklyAvg = totalUnitsPeriod / TOTAL_EVALUATION_WEEKS;
+            const elasticity = calculateLogLogElasticity(pricesRetailList, unitsHistList);
+
+            let pPublicoNetoU3S = 0;
+            if (pricesRetailList.length >= 3) {
+                const last3 = pricesRetailList.slice(-3);
+                pPublicoNetoU3S = last3.reduce((a,b)=>a+b, 0) / last3.length;
+            } else if (pricesRetailList.length > 0) {
+                pPublicoNetoU3S = pricesRetailList.reduce((a,b)=>a+b, 0) / pricesRetailList.length;
+            } else {
+                pPublicoNetoU3S = pDistActual / (1.0 - targetRetailMargin);
+            }
+
+            const pPublicoU3S = pPublicoNetoU3S * 1.19;
+
+            // Precio Simulado por Margen CIC y Margen Retailer
+            const pDistSim = costoFab / (1.0 - targetMargin);
+            const pPublicoNetoSim = pDistSim / (1.0 - targetRetailMargin);
+            const pPublicoOferta = pPublicoNetoSim * 1.19;
+
+            const varPVPPct = pPublicoU3S > 0 ? ((pPublicoOferta - pPublicoU3S) / pPublicoU3S) : 0;
+            const unProjWeeklyAvg = (1.0 + varPVPPct) > 0 ? unHistWeeklyAvg * Math.pow(1.0 + varPVPPct, elasticity) : 0;
+
+            const pDistPercibidoSim = (pPublicoOferta / 1.19) * (1.0 - targetRetailMargin);
+            const contribUnitariaSim = pDistPercibidoSim - costoFab;
+            const contribUnitariaActual = pDistActual - costoFab;
+
+            const conActualWeekly = unHistWeeklyAvg * contribUnitariaActual;
+            const conSimWeekly = unProjWeeklyAvg * contribUnitariaSim;
+
+            const displayConActual = (timeViewMode === 'period_total') ? (conActualWeekly * TOTAL_EVALUATION_WEEKS) : conActualWeekly;
+            const displayConSim = (timeViewMode === 'period_total') ? (conSimWeekly * TOTAL_EVALUATION_WEEKS) : conSimWeekly;
+            const displayUnitsHist = (timeViewMode === 'period_total') ? totalUnitsPeriod : unHistWeeklyAvg;
+            const displayUnitsProj = (timeViewMode === 'period_total') ? (unProjWeeklyAvg * TOTAL_EVALUATION_WEEKS) : unProjWeeklyAvg;
+
+            const diffCon = displayConSim - displayConActual;
+            const diffConPct = displayConActual > 0 ? (diffCon / displayConActual * 100) : 0;
+
+            // Actualizar KPIs del Módulo Producto Único
+            document.getElementById('spBadgeInfo').textContent = `SKU: ${skuCode} | ${prodName.substring(0,35)} (${matchedRows.length} cadenas)`;
+            document.getElementById('spKpiPDist').textContent = `$${Math.round(pDistActual).toLocaleString('es-CL')} ➔ $${Math.round(pDistSim).toLocaleString('es-CL')}`;
+            document.getElementById('spKpiPVP').textContent = `$${Math.round(pPublicoU3S).toLocaleString('es-CL')} ➔ $${Math.round(pPublicoOferta).toLocaleString('es-CL')}`;
+            document.getElementById('spKpiUnits').textContent = `${displayUnitsHist.toFixed(2)} ➔ ${displayUnitsProj.toFixed(2)} u.`;
+            document.getElementById('spKpiContrib').textContent = `$${Math.round(displayConActual).toLocaleString('es-CL')} ➔ $${Math.round(displayConSim).toLocaleString('es-CL')}`;
+            document.getElementById('spKpiContribSub').textContent = `Diferencia: ${diffConPct>=0?'+':''}${diffConPct.toFixed(1)}% (+$${Math.round(diffCon).toLocaleString('es-CL')} CLP)`;
+            
+            document.getElementById('spKpiElasticity').textContent = elasticity.toFixed(2);
+            document.getElementById('spKpiFactura').textContent = `Facturación PVP: $${Math.round(displayUnitsProj * pPublicoOferta).toLocaleString('es-CL')} CLP`;
+
+            // Generar Curva de Sensibilidad (-35% a +35%)
+            const pricePoints = [];
+            const pvpSteps = [-0.35, -0.25, -0.15, -0.05, 0.0, 0.05, 0.15, 0.25, 0.35];
+
+            let maxContribVal = -Infinity;
+            let optimalPricePoint = null;
+
+            pvpSteps.forEach(pctStep => {
+                const pvpTest = pPublicoU3S * (1.0 + pctStep);
+                const qTest = unHistWeeklyAvg * Math.pow(1.0 + pctStep, elasticity);
+                const pDistPercibidoTest = (pvpTest / 1.19) * (1.0 - targetRetailMargin);
+                const contribUnitTest = pDistPercibidoTest - costoFab;
+                const contribWeeklyTest = qTest * contribUnitTest;
+                const contribDisplayTest = (timeViewMode === 'period_total') ? (contribWeeklyTest * TOTAL_EVALUATION_WEEKS) : contribWeeklyTest;
+
+                if (contribDisplayTest > maxContribVal) {
+                    maxContribVal = contribDisplayTest;
+                    optimalPricePoint = { pvpTest, pctStep, qTest, contribDisplayTest };
+                }
+
+                pricePoints.push({
+                    pctStep, pvpTest, qTest, contribDisplayTest, pDistPercibidoTest
+                });
+            });
+
+            // Actualizar Banner Ejecutivo del Módulo Producto Único
+            const spBox = document.getElementById('spExecBox');
+            const spTitle = document.getElementById('spExecTitle');
+            const spContent = document.getElementById('spExecContent');
+
+            if (optimalPricePoint) {
+                const optPVP = Math.round(optimalPricePoint.pvpTest);
+                const currentPVP = Math.round(pPublicoOferta);
+                const diffOpt = Math.abs(currentPVP - optPVP);
+
+                if (diffOpt < 0.05 * currentPVP) {
+                    spBox.className = 'executive-box success';
+                    spTitle.innerHTML = `<i data-lucide="check-circle-2"></i> Precio Propuesto Cercano al Óptimo de Maximización ($${optPVP.toLocaleString('es-CL')} CLP)`;
+                    spContent.innerHTML = `La propuesta actual con PVP $${currentPVP.toLocaleString('es-CL')} CLP está dentro del rango óptimo que maximiza la contribución neta semanal ($${Math.round(optimalPricePoint.contribDisplayTest).toLocaleString('es-CL')} CLP).`;
+                } else if (currentPVP > optPVP) {
+                    spBox.className = 'executive-box warning';
+                    spTitle.innerHTML = `<i data-lucide="alert-triangle"></i> Oportunidad: El Precio Actual está por encima del Óptimo de Contribución`;
+                    spContent.innerHTML = `Bajar el PVP de $${currentPVP.toLocaleString('es-CL')} CLP a <strong>$${optPVP.toLocaleString('es-CL')} CLP</strong> aprovecharía la elasticidad (${elasticity.toFixed(2)}) para capturar mayor volumen y maximizar la contribución neta.`;
+                } else {
+                    spBox.className = 'executive-box warning';
+                    spTitle.innerHTML = `<i data-lucide="arrow-up-right"></i> Oportunidad: Margen Capturable sin Destruir Volumen`;
+                    spContent.innerHTML = `Subir el PVP de $${currentPVP.toLocaleString('es-CL')} CLP hacia <strong>$${optPVP.toLocaleString('es-CL')} CLP</strong> incrementaría la ganancia neta debido a la baja elasticidad de este producto.`;
+                }
+            }
+
+            renderSingleProductCharts(pricePoints, pPublicoU3S, pPublicoOferta, unHistWeeklyAvg, unProjWeeklyAvg, displayConSim, timeViewMode);
+            renderSingleProductSensitivityTable(pricePoints, pPublicoOferta, targetRetailMargin, costoFab, elasticity, timeViewMode);
+            lucide.createIcons();
+        }
+
+        function renderSingleProductCharts(pricePoints, pvpHist, pvpOferta, qHist, qOferta, conOferta, timeViewMode) {
+            // Chart 1: Demanda (PVP vs Volumen)
+            const ctxDemand = document.getElementById('spDemandChart').getContext('2d');
+            if (spDemandChartInstance) spDemandChartInstance.destroy();
+
+            const labelsDemand = pricePoints.map(p => `$${Math.round(p.pvpTest).toLocaleString('es-CL')}`);
+            const dataDemand = pricePoints.map(p => p.qTest.toFixed(2));
+
+            spDemandChartInstance = new Chart(ctxDemand, {
+                type: 'line',
+                data: {
+                    labels: labelsDemand,
+                    datasets: [{
+                        label: 'Unidades Semanales Proyectadas (q)',
+                        data: dataDemand,
+                        borderColor: '#06b6d4',
+                        backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 5,
+                        pointHoverRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#94a3b8' } }
+                    },
+                    scales: {
+                        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }
+                    }
+                }
+            });
+
+            // Chart 2: Contribución Neta ($ CLP vs PVP)
+            const ctxContrib = document.getElementById('spContribChart').getContext('2d');
+            if (spContribChartInstance) spContribChartInstance.destroy();
+
+            const dataContrib = pricePoints.map(p => Math.round(p.contribDisplayTest));
+
+            spContribChartInstance = new Chart(ctxContrib, {
+                type: 'line',
+                data: {
+                    labels: labelsDemand,
+                    datasets: [{
+                        label: `Contribución Neta Real (${timeViewMode==='period_total'?'30 Semanas':'Semanal'})`,
+                        data: dataContrib,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 5,
+                        pointHoverRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#94a3b8' } }
+                    },
+                    scales: {
+                        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }
+                    }
+                }
+            });
+        }
+
+        function renderSingleProductSensitivityTable(pricePoints, pvpOferta, targetRetailMargin, costoFab, elasticity, timeViewMode) {
+            const tbody = document.getElementById('spSensitivityTableBody');
+            tbody.innerHTML = '';
+
+            let maxCon = -Infinity;
+            pricePoints.forEach(p => { if (p.contribDisplayTest > maxCon) maxCon = p.contribDisplayTest; });
+
+            pricePoints.forEach(p => {
+                const tr = document.createElement('tr');
+                const isOptimal = (p.contribDisplayTest === maxCon);
+                const isCurrentProposed = Math.abs(p.pvpTest - pvpOferta) < 0.03 * pvpOferta;
+
+                let badgeHTML = '<span class="pill pill-blue">Escenario</span>';
+                if (isOptimal) badgeHTML = '<span class="pill pill-emerald">🔥 Óptimo Contribución</span>';
+                else if (isCurrentProposed) badgeHTML = '<span class="pill pill-amber">⭐ Oferta Propuesta</span>';
+
+                tr.innerHTML = `
+                    <td><strong>${p.pctStep >= 0 ? '+' : ''}${(p.pctStep * 100).toFixed(0)}% Var. PVP</strong></td>
+                    <td>$${Math.round(p.pvpTest).toLocaleString('es-CL')}</td>
+                    <td>${(targetRetailMargin * 100).toFixed(0)}%</td>
+                    <td>$${Math.round(p.pDistPercibidoTest).toLocaleString('es-CL')}</td>
+                    <td><strong>${p.qTest.toFixed(2)} u./sem</strong></td>
+                    <td><strong style="color: ${isOptimal?'#6ee7b7':'#f8fafc'};">$${Math.round(p.contribDisplayTest).toLocaleString('es-CL')}</strong></td>
+                    <td>${badgeHTML}</td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
         function runSimulation() {
